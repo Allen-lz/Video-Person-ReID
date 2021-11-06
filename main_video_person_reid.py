@@ -65,7 +65,7 @@ parser.add_argument('--print-freq', type=int, default=80, help="print frequency"
 parser.add_argument('--seed', type=int, default=1, help="manual seed")
 parser.add_argument('--pretrained-model', type=str, default='/home/jiyang/Workspace/Works/video-person-reid/3dconv-person-reid/pretrained_models/resnet-50-kinetics.pth', help='need to be set for resnet3d models')
 parser.add_argument('--evaluate', action='store_true', help="evaluation only")
-parser.add_argument('--eval-step', type=int, default=50,
+parser.add_argument('--eval-step', type=int, default=1,
                     help="run evaluation for every N epochs (set to -1 to test after training)")
 parser.add_argument('--save-dir', type=str, default='log')
 parser.add_argument('--use-cpu', action='store_true', help="use cpu")
@@ -202,6 +202,7 @@ def train(model, criterion_xent, criterion_htri, optimizer, trainloader, use_gpu
             imgs, pids = imgs.cuda(), pids.cuda()
         imgs, pids = Variable(imgs), Variable(pids)
         outputs, features = model(imgs)
+
         if args.htri_only:
             # only use hard triplet loss to train the network
             loss = criterion_htri(features, pids)
@@ -213,7 +214,7 @@ def train(model, criterion_xent, criterion_htri, optimizer, trainloader, use_gpu
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        losses.update(loss.data[0], pids.size(0))
+        losses.update(loss.item(), pids.size(0))
 
         if (batch_idx+1) % args.print_freq == 0:
             print("Batch {}/{}\t Loss {:.6f} ({:.6f})".format(batch_idx+1, len(trainloader), losses.val, losses.avg))
@@ -225,18 +226,19 @@ def test(model, queryloader, galleryloader, pool, use_gpu, ranks=[1, 5, 10, 20])
     for batch_idx, (imgs, pids, camids) in enumerate(queryloader):
         if use_gpu:
             imgs = imgs.cuda()
-        imgs = Variable(imgs, volatile=True)
-        # b=1, n=number of clips, s=16
-        b, n, s, c, h, w = imgs.size()
-        assert(b==1)
-        imgs = imgs.view(b*n, s, c, h, w)
-        features = model(imgs)
-        features = features.view(n, -1)
-        features = torch.mean(features, 0)
-        features = features.data.cpu()
-        qf.append(features)
-        q_pids.extend(pids)
-        q_camids.extend(camids)
+        with torch.no_grad():
+            imgs = Variable(imgs)
+            # b=1, n=number of clips, s=16
+            b, n, s, c, h, w = imgs.size()
+            assert (b == 1)
+            imgs = imgs.view(b * n, s, c, h, w)
+            features = model(imgs)
+            features = features.view(n, -1)
+            features = torch.mean(features, 0)
+            features = features.data.cpu()
+            qf.append(features)
+            q_pids.extend(pids)
+            q_camids.extend(camids)
     qf = torch.stack(qf)
     q_pids = np.asarray(q_pids)
     q_camids = np.asarray(q_camids)
@@ -247,20 +249,21 @@ def test(model, queryloader, galleryloader, pool, use_gpu, ranks=[1, 5, 10, 20])
     for batch_idx, (imgs, pids, camids) in enumerate(galleryloader):
         if use_gpu:
             imgs = imgs.cuda()
-        imgs = Variable(imgs, volatile=True)
-        b, n, s, c, h, w = imgs.size()
-        imgs = imgs.view(b*n, s , c, h, w)
-        assert(b==1)
-        features = model(imgs)
-        features = features.view(n, -1)
-        if pool == 'avg':
-            features = torch.mean(features, 0)
-        else:
-            features, _ = torch.max(features, 0)
-        features = features.data.cpu()
-        gf.append(features)
-        g_pids.extend(pids)
-        g_camids.extend(camids)
+        with torch.no_grad():
+            imgs = Variable(imgs)
+            b, n, s, c, h, w = imgs.size()
+            imgs = imgs.view(b*n, s , c, h, w)
+            assert(b==1)
+            features = model(imgs)
+            features = features.view(n, -1)
+            if pool == 'avg':
+                features = torch.mean(features, 0)
+            else:
+                features, _ = torch.max(features, 0)
+            features = features.data.cpu()
+            gf.append(features)
+            g_pids.extend(pids)
+            g_camids.extend(camids)
     gf = torch.stack(gf)
     g_pids = np.asarray(g_pids)
     g_camids = np.asarray(g_camids)

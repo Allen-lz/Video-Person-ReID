@@ -76,10 +76,12 @@ class TripletLoss(nn.Module):
         mask = targets.expand(n, n).eq(targets.expand(n, n).t())
         dist_ap, dist_an = [], []
         for i in range(n):
-            dist_ap.append(dist[i][mask[i]].max())
-            dist_an.append(dist[i][mask[i] == 0].min())
-        dist_ap = torch.cat(dist_ap)
-        dist_an = torch.cat(dist_an)
+
+            dist_ap.append(dist[i][mask[i]].max().unsqueeze(0))
+            dist_an.append(dist[i][mask[i] == 0].min().unsqueeze(0))
+
+        dist_ap = torch.cat(dist_ap, dim=0).view(-1)
+        dist_an = torch.cat(dist_an, dim=0).view(-1)
         # Compute ranking hinge loss
         y = dist_an.data.new()
         y.resize_as_(dist_an.data)

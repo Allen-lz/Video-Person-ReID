@@ -76,7 +76,7 @@ class VideoDataset(Dataset):
             This sampling strategy is used in test phase.
             """
             cur_index=0
-            frame_indices = range(num)
+            frame_indices = list(range(num))
             indices_list=[]
             while num-cur_index > self.seq_len:
                 indices_list.append(frame_indices[cur_index:cur_index+self.seq_len])
