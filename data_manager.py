@@ -1,15 +1,15 @@
 from __future__ import print_function, absolute_import
 import os
 import glob
-import re
-import sys
 import urllib
 import tarfile
-import zipfile
 import os.path as osp
 from scipy.io import loadmat
 import numpy as np
-
+from tqdm import tqdm
+from video_loader import read_image
+import transforms as T
+import random
 from utils import mkdir_if_missing, write_json, read_json
 
 """Dataset classes"""
@@ -419,12 +419,154 @@ class PRID(object):
 
         return tracklets, num_tracklets, num_pids, num_imgs_per_tracklet
 
+
+class DukeMTMC_Video(object):
+    """
+    DukeMTMC-vedio
+
+    Reference:
+    Exploit the Unknown Gradually: One-Shot Video-Based Person Re-Identification by Stepwise Learning. Wu et al., CVPR 2018
+
+    Dataset statistics:
+    702 identities (2,196 videos) for training and 702 identities (2,636 videos) for testing.
+    # cameras: 8
+
+    Args:
+        min_seq_len (int): tracklet with length shorter than this value will be discarded (default: 0).
+    """
+
+    def __init__(self, min_seq_len=0):
+        root = '/home/dm/datasets/Reid/DukeMTMC-VideoReID'
+        self.root = root
+        self.train_name_path = os.path.join(root, "train")
+        self.gallery_name_path = os.path.join(root, "gallery")
+        self.query_name_path = os.path.join(root, "query")
+        self._check_before_run()
+
+        gallery, num_gallery_tracklets, num_gallery_pids, num_gallery_imgs, gallery_t_list = \
+            self._process_data(self.gallery_name_path, relabel=True, min_seq_len=min_seq_len,
+                               exclude_tracklets=self.query_name_path)
+
+        query, num_query_tracklets, num_query_pids, num_query_imgs, query_t_list = \
+            self._process_data(self.query_name_path, relabel=True, min_seq_len=min_seq_len,
+                               exclude_tracklets=self.gallery_name_path)
+
+        train, num_train_tracklets, num_train_pids, num_train_imgs, train_t_list = \
+            self._process_data(self.train_name_path, relabel=True, min_seq_len=min_seq_len)
+
+        num_imgs_per_tracklet = num_train_imgs + num_query_imgs + num_gallery_imgs
+        min_num = np.min(num_imgs_per_tracklet)
+        max_num = np.max(num_imgs_per_tracklet)
+        avg_num = np.mean(num_imgs_per_tracklet)
+
+        num_total_pids = num_train_pids + num_gallery_pids
+        num_total_tracklets = num_train_tracklets + num_query_tracklets + num_gallery_tracklets
+
+        print("=> MARS loaded")
+        print("Dataset statistics:")
+        print("  ------------------------------")
+        print("  subset   | # ids | # tracklets")
+        print("  ------------------------------")
+        print("  train    | {:5d} | {:8d}".format(num_train_pids, num_train_tracklets))
+        print("  query    | {:5d} | {:8d}".format(num_query_pids, num_query_tracklets))
+        print("  gallery  | {:5d} | {:8d}".format(num_gallery_pids, num_gallery_tracklets))
+        print("  ------------------------------")
+        print("  total    | {:5d} | {:8d}".format(num_total_pids, num_total_tracklets))
+        print("  number of images per tracklet: {} ~ {}, average {:.1f}".format(min_num, max_num, avg_num))
+        print("  ------------------------------")
+
+        self.train = train
+        self.query = query
+        self.gallery = gallery
+
+        self.num_train_pids = num_train_pids
+        self.num_query_pids = num_query_pids
+        self.num_gallery_pids = num_gallery_pids
+
+    def get_mean_and_var(self):
+        imgs = []
+        for t in self.train:
+            imgs.extend(t[0])
+        channel = 3
+        x_tot = np.zeros(channel)
+        x2_tot = np.zeros(channel)
+        for img in tqdm(imgs):
+            x = T.ToTensor()(read_image(img)).view(3, -1)
+            x_tot += x.mean(dim=1).numpy()
+            x2_tot += (x ** 2).mean(dim=1).numpy()
+
+        channel_avr = x_tot / len(imgs)
+        channel_std = np.sqrt(x2_tot / len(imgs) - channel_avr ** 2)
+        print(channel_avr, channel_std)
+
+    def _check_before_run(self):
+        """Check if all files are available before going deeper"""
+        if not osp.exists(self.root):
+            raise RuntimeError("'{}' is not available".format(self.root))
+        if not osp.exists(self.train_name_path):
+            raise RuntimeError("'{}' is not available".format(self.train_name_path))
+        if not osp.exists(self.gallery_name_path):
+            raise RuntimeError("'{}' is not available".format(self.gallery_name_path))
+        if not osp.exists(self.query_name_path):
+            raise RuntimeError("'{}' is not available".format(self.query_name_path))
+
+    def _get_names(self, fpath):
+        names = []
+        with open(fpath, 'r') as f:
+            for line in f:
+                new_line = line.rstrip()
+                names.append(new_line)
+        return names
+
+    def _process_data(self, home_dir, relabel=True, min_seq_len=0, attr=False, exclude_tracklets=None):
+        pid_list = []
+        tracklets_path = []
+        tracklets_list = []
+        for p in os.listdir(home_dir):
+            for t in os.listdir(os.path.join(home_dir, p)):
+                if exclude_tracklets is None or t not in exclude_tracklets:
+                    pid_list.append(int(p))
+                    tracklets_path.append(os.path.join(home_dir, p + "/" + t))
+                    tracklets_list.append(t)
+        pid_list = set(pid_list)
+        if relabel:
+            pid2label = {pid: label for label, pid in enumerate(pid_list)}
+        tracklets = []
+        num_imgs_per_tracklet = []
+        for tracklet_idx in range(len(tracklets_path)):
+            img_names = os.listdir(tracklets_path[tracklet_idx])
+            pid = int(img_names[0].split("_")[0])
+            camid = int(img_names[0].split("C")[1].split("_")[0])
+            assert 1 <= camid <= 8
+            if relabel: pid = pid2label[pid]
+            camid -= 1  # index starts from 0
+            # make sure image names correspond to the same person
+            pnames = [img_name[:4] for img_name in img_names]
+            assert len(set(pnames)) == 1, "Error: a single tracklet contains different person images"
+
+            # make sure all images are captured under the same camera*
+            camnames = [img_name[6] for img_name in img_names]
+            assert len(set(camnames)) == 1, "Error: images are captured under different cameras!"
+
+            # append image names with directory information
+            img_paths = [osp.join(tracklets_path[tracklet_idx], img_name) for img_name in img_names]
+
+            if len(img_paths) >= min_seq_len:
+                random.shuffle(img_paths)
+                img_paths = tuple(img_paths)
+                tracklets.append((img_paths, pid, camid))
+                num_imgs_per_tracklet.append(len(img_paths))
+
+        num_tracklets = len(tracklets)
+        return tracklets, num_tracklets, len(pid_list), num_imgs_per_tracklet, tracklets_list
+
 """Create dataset"""
 
 __factory = {
     'mars': Mars,
     'ilidsvid': iLIDSVID,
     'prid': PRID,
+    'duke': DukeMTMC_Video
 }
 
 def get_names():

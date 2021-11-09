@@ -40,7 +40,7 @@ parser.add_argument('--max-epoch', default=800, type=int,
                     help="maximum epochs to run")
 parser.add_argument('--start-epoch', default=0, type=int,
                     help="manual epoch number (useful on restarts)")
-parser.add_argument('--train-batch', default=32, type=int,
+parser.add_argument('--train-batch', default=16, type=int,
                     help="train batch size")
 parser.add_argument('--test-batch', default=1, type=int, help="has to be 1")
 parser.add_argument('--lr', '--learning-rate', default=0.0003, type=float,
@@ -65,9 +65,10 @@ parser.add_argument('--print-freq', type=int, default=80, help="print frequency"
 parser.add_argument('--seed', type=int, default=1, help="manual seed")
 parser.add_argument('--pretrained-model', type=str, default='/home/jiyang/Workspace/Works/video-person-reid/3dconv-person-reid/pretrained_models/resnet-50-kinetics.pth', help='need to be set for resnet3d models')
 parser.add_argument('--evaluate', action='store_true', help="evaluation only")
-parser.add_argument('--eval-step', type=int, default=1,
+parser.add_argument('--eval-step', type=int, default=40,
                     help="run evaluation for every N epochs (set to -1 to test after training)")
 parser.add_argument('--save-dir', type=str, default='log')
+parser.add_argument('--surf', action='store_true')
 parser.add_argument('--use-cpu', action='store_true', help="use cpu")
 parser.add_argument('--gpu-devices', default='0', type=str, help='gpu device ids for CUDA_VISIBLE_DEVICES')
 
@@ -110,22 +111,21 @@ def main():
 
     pin_memory = True if use_gpu else False
 
-
     trainloader = DataLoader(
-        VideoDataset(dataset.train, seq_len=args.seq_len, sample='random',transform=transform_train),
+        VideoDataset(dataset.train, args.dataset, seq_len=args.seq_len, sample='random', transform=transform_train, use_surf=args.surf),
         sampler=RandomIdentitySampler(dataset.train, num_instances=args.num_instances),
         batch_size=args.train_batch, num_workers=args.workers,
         pin_memory=pin_memory, drop_last=True,
     )
 
     queryloader = DataLoader(
-        VideoDataset(dataset.query, seq_len=args.seq_len, sample='dense', transform=transform_test),
+        VideoDataset(dataset.query, args.dataset, seq_len=args.seq_len, sample='dense', transform=transform_test),
         batch_size=args.test_batch, shuffle=False, num_workers=args.workers,
         pin_memory=pin_memory, drop_last=False,
     )
 
     galleryloader = DataLoader(
-        VideoDataset(dataset.gallery, seq_len=args.seq_len, sample='dense', transform=transform_test),
+        VideoDataset(dataset.gallery, args.dataset, seq_len=args.seq_len, sample='dense', transform=transform_test),
         batch_size=args.test_batch, shuffle=False, num_workers=args.workers,
         pin_memory=pin_memory, drop_last=False,
     )
@@ -201,6 +201,7 @@ def train(model, criterion_xent, criterion_htri, optimizer, trainloader, use_gpu
         if use_gpu:
             imgs, pids = imgs.cuda(), pids.cuda()
         imgs, pids = Variable(imgs), Variable(pids)
+
         outputs, features = model(imgs)
 
         if args.htri_only:

@@ -2,7 +2,7 @@ from __future__ import print_function, absolute_import
 import os
 from PIL import Image
 import numpy as np
-
+import cv2
 import torch
 from torch.utils.data import Dataset
 import random
@@ -27,11 +27,15 @@ class VideoDataset(Dataset):
     """
     sample_methods = ['evenly', 'random', 'all']
 
-    def __init__(self, dataset, seq_len=15, sample='evenly', transform=None):
+    def __init__(self, dataset, datasetname, seq_len=15, sample='evenly', transform=None, use_surf=False, candidate_len=15):
         self.dataset = dataset
         self.seq_len = seq_len
         self.sample = sample
         self.transform = transform
+        self.candidate_len = candidate_len
+        self.use_surf = use_surf
+        self.datasetname = datasetname
+
 
     def __len__(self):
         return len(self.dataset)
@@ -46,17 +50,72 @@ class VideoDataset(Dataset):
             This sampling strategy is used in training phase.
             """
             frame_indices = range(num)
-            rand_end = max(0, len(frame_indices) - self.seq_len - 1)
-            begin_index = random.randint(0, rand_end)
-            end_index = min(begin_index + self.seq_len, len(frame_indices))
+            if self.use_surf and len(frame_indices) >= self.candidate_len:
+                # 随机得到一个end_index
+                # 保证有一个self.candidate_len的长度
+                rand_end = max(0, len(frame_indices) - self.candidate_len - 1)
+                # 随机得到一个begin_index
+                begin_index = random.randint(0, rand_end)
+                end_index = min(begin_index + self.candidate_len, len(frame_indices))
 
-            indices = frame_indices[begin_index:end_index]
+                indices = frame_indices[begin_index:end_index]
+                for index in indices:
+                    if len(indices) >= self.candidate_len:
+                        break
+                    indices.append(index)
 
-            for index in indices:
-                if len(indices) >= self.seq_len:
-                    break
-                indices.append(index)
-            indices=np.array(indices)
+                imgs_sift = list()
+                sift2index = dict()
+                for index in indices:
+                    img_name = os.path.basename(img_paths[index])
+                    txt_name = img_name.split('.')[0] + '.txt'
+                    img_sift = np.loadtxt(img_paths[index].replace("prid2011", "{}_surf_features".format(self.datasetname)).replace(img_name, txt_name), dtype=np.float32)
+                    imgs_sift.append(img_sift)
+                    sift2index[str(img_sift).strip()] = index
+
+                imgs_sift = np.vstack(imgs_sift)
+
+                # define criteria and apply kmeans()
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+                ret, label, center = cv2.kmeans(imgs_sift, self.seq_len, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+
+                # sift2index
+                cluster = dict()
+                for i in range(self.seq_len):
+                    A = imgs_sift[label.ravel() == i]
+                    cluster[i] = A
+                    # cluster[i] = A.tolist()
+
+                # 从每个簇中随机选出1个，一共4个index
+                new_indices = list()
+                for i in range(self.seq_len):
+                    if len(cluster[i]) != 0:
+                        rand_index = random.randint(0, len(cluster[i]) - 1)
+                        # print(cluster[i][rand_index].shape)
+                        new_index = sift2index[str(cluster[i][rand_index]).strip()]
+                        new_indices.append(new_index)
+
+                # 发生了簇的缺失的话就从余下的index中取得不重复的new_index
+                needed_num = self.seq_len - len(new_indices)
+                for i in range(needed_num):
+                    new_indices.append((indices - new_indices)[0])
+
+                indices = new_indices
+                # ----------------------------------------------------------------
+
+            else:
+                rand_end = max(0, len(frame_indices) - self.seq_len - 1)
+                begin_index = random.randint(0, rand_end)
+                end_index = min(begin_index + self.seq_len, len(frame_indices))
+
+                indices = frame_indices[begin_index:end_index]
+
+                for index in indices:
+                    if len(indices) >= self.seq_len:
+                        break
+                    indices.append(index)
+                indices=np.array(indices)
+
             imgs = []
             for index in indices:
                 index=int(index)
