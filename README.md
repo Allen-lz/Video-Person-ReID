@@ -32,9 +32,16 @@ mars/
 5. Use `-d mars` when running the training code.
 
 ### Usage
+prepare dataset (注意文件的命名规范)
+
+    python tools/surf_feature_extraction.py
+
+
 To train the model, please run
 
-    python main_video_person_reid.py --arch=resnet50ta --dataset prid  --use_surf True
+    python main_video_person_reid.py --arch=resnet50ta --dataset prid  --surf
+注意 (在更换数据集的时候还要将`video_loader.py`中第72行中的"prid2011"换成当前数据集的文件夹名称)
+
 arch could be resnet50tp (Temporal Pooling), resnet50ta (Temporal Attention), resnet50rnn (RNN), resnet503d (3D conv). For 3D conv, I use the design and implementation from [3D-ResNets-PyTorch](https://github.com/kenshohara/3D-ResNets-PyTorch), just minor modification is done to fit the network into this person reID system.
 
 In my experiments, I found that learning rate has a significant impact on the final performance. Here are the learning rates I used (may not be the best): 0.0003 for temporal pooling, 0.0003 for temporal attention, 0.0001 for RNN, 0.0001 for 3D conv.

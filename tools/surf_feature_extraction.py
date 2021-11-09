@@ -80,6 +80,7 @@ if __name__ == "__main__":
 
     root = '/home/dm/datasets/Reid/DukeMTMC-VideoReID/'
     sift_root = '/home/dm/datasets/Reid/duke_surf_features'
+
     if not os.path.exists(sift_root):
         os.makedirs(sift_root)
     img_list = []
