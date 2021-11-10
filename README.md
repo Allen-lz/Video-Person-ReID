@@ -37,9 +37,10 @@ prepare dataset (注意文件的命名规范)
     python tools/surf_feature_extraction.py
 
 
-To train the model, please run
+To train the model, please run (--surf[是否使用surf特征来采集关键帧] --iffr[是否使用FRBIFR模块])
 
-    python main_video_person_reid.py --arch=resnet50ta --dataset prid  --surf
+    python main_video_person_reid.py --arch=resnet50ta --dataset prid  --surf --iffr
+    
 注意 (在更换数据集的时候还要将`video_loader.py`中第72行中的"prid2011"换成当前数据集的文件夹名称)
 
 arch could be resnet50tp (Temporal Pooling), resnet50ta (Temporal Attention), resnet50rnn (RNN), resnet503d (3D conv). For 3D conv, I use the design and implementation from [3D-ResNets-PyTorch](https://github.com/kenshohara/3D-ResNets-PyTorch), just minor modification is done to fit the network into this person reID system.

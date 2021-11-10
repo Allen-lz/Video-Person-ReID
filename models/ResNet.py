@@ -9,10 +9,36 @@ import torchvision
 __all__ = ['ResNet50TP', 'ResNet50TA', 'ResNet50RNN']
 
 
+def Inter_frame_feature_reorganization(x, t):
+    vs = list()
+    M1 = Variable(torch.eye(t, t)).to(x.device)
+
+    for v in x:
+        l2 = torch.norm(v, p=2, dim=1, keepdim=True)
+        metric_matrix = v / l2
+
+        metric_matrix2 = metric_matrix * metric_matrix
+        spV = metric_matrix2.sum(1) / 2
+        spV = spV.unsqueeze(0)
+        spM = spV + spV.transpose(1, 0)
+
+        mpM = torch.matmul(metric_matrix, metric_matrix.transpose(1, 0))
+
+        dM = M1 + spM - mpM
+        # dM = F.sigmoid(dM)
+        dM = F.softmax(dM, dim=1)
+        v = torch.matmul(dM, v)
+        vs.append(v.unsqueeze(0))
+
+    x = torch.cat(vs, dim=0)
+    return x
+
+
 class ResNet50TP(nn.Module):
     def __init__(self, num_classes, loss={'xent'}, **kwargs):
         super(ResNet50TP, self).__init__()
         self.loss = loss
+        self.iffr = kwargs['iffr']
         resnet50 = torchvision.models.resnet50(pretrained=True)
         self.base = nn.Sequential(*list(resnet50.children())[:-2])
         self.feat_dim = 2048
@@ -24,7 +50,11 @@ class ResNet50TP(nn.Module):
         x = x.view(b*t,x.size(2), x.size(3), x.size(4))
         x = self.base(x)
         x = F.avg_pool2d(x, x.size()[2:])
-        x = x.view(b,t,-1)
+        x = x.view(b, t, -1)
+
+        if self.iffr:
+            x = Inter_frame_feature_reorganization(x, t)
+
         x=x.permute(0,2,1)
         f = F.avg_pool1d(x,t)
         f = f.view(b, self.feat_dim)
@@ -46,6 +76,7 @@ class ResNet50TA(nn.Module):
     def __init__(self, num_classes, loss={'xent'}, **kwargs):
         super(ResNet50TA, self).__init__()
         self.loss = loss
+        self.iffr = kwargs['iffr']
         resnet50 = torchvision.models.resnet50(pretrained=True)
         self.base = nn.Sequential(*list(resnet50.children())[:-2])
         self.att_gen = 'softmax' # method for attention generation: softmax or sigmoid
@@ -76,6 +107,10 @@ class ResNet50TA(nn.Module):
         a = torch.unsqueeze(a, -1)
         a = a.expand(b, t, self.feat_dim)
         att_x = torch.mul(x,a)
+
+        if self.iffr:
+            att_x = Inter_frame_feature_reorganization(att_x, t)
+
         att_x = torch.sum(att_x,1)
         
         f = att_x.view(b,self.feat_dim)
@@ -97,6 +132,7 @@ class ResNet50RNN(nn.Module):
     def __init__(self, num_classes, loss={'xent'}, **kwargs):
         super(ResNet50RNN, self).__init__()
         self.loss = loss
+        self.iffr = kwargs['iffr']
         resnet50 = torchvision.models.resnet50(pretrained=True)
         self.base = nn.Sequential(*list(resnet50.children())[:-2])
         self.hidden_dim = 512
@@ -109,7 +145,11 @@ class ResNet50RNN(nn.Module):
         x = x.view(b*t,x.size(2), x.size(3), x.size(4))
         x = self.base(x)
         x = F.avg_pool2d(x, x.size()[2:])
-        x = x.view(b,t,-1)
+        x = x.view(b, t, -1)
+        if self.iffr:
+            x = Inter_frame_feature_reorganization(x, t)
+
+
         output, (h_n, c_n) = self.lstm(x)
         output = output.permute(0, 2, 1)
         f = F.avg_pool1d(output, t)
