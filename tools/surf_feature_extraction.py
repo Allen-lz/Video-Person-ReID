@@ -45,7 +45,7 @@ def write_f_2_txt(filename, sift_f):
     if len(sift_f.shape) > 1:
         savetxt(filename, sift_f)
     else:
-        savetxt(filename, np.array([0]))
+        savetxt(filename, np.array([0] * 64))
 
 def sift2txt(image, feature_name):
     # 获得sift特征

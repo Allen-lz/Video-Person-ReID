@@ -443,15 +443,19 @@ class DukeMTMC_Video(object):
         self.query_name_path = os.path.join(root, "query")
         self._check_before_run()
 
-        gallery, num_gallery_tracklets, num_gallery_pids, num_gallery_imgs, gallery_t_list = \
-            self._process_data(self.gallery_name_path, relabel=True, min_seq_len=min_seq_len,
-                               exclude_tracklets=self.query_name_path)
-
-        query, num_query_tracklets, num_query_pids, num_query_imgs, query_t_list = \
+        query, num_query_tracklets, num_query_pids, num_query_imgs, query_t_list, pid2label = \
             self._process_data(self.query_name_path, relabel=True, min_seq_len=min_seq_len,
-                               exclude_tracklets=self.gallery_name_path)
+                               exclude_tracklets=self.gallery_name_path
+                               )
 
-        train, num_train_tracklets, num_train_pids, num_train_imgs, train_t_list = \
+        gallery, num_gallery_tracklets, num_gallery_pids, num_gallery_imgs, gallery_t_list, _ = \
+            self._process_data(self.gallery_name_path, relabel=True, min_seq_len=min_seq_len,
+                               exclude_tracklets=self.query_name_path, pid2label=pid2label
+                               )
+
+
+
+        train, num_train_tracklets, num_train_pids, num_train_imgs, train_t_list, _ = \
             self._process_data(self.train_name_path, relabel=True, min_seq_len=min_seq_len)
 
         num_imgs_per_tracklet = num_train_imgs + num_query_imgs + num_gallery_imgs
@@ -518,7 +522,7 @@ class DukeMTMC_Video(object):
                 names.append(new_line)
         return names
 
-    def _process_data(self, home_dir, relabel=True, min_seq_len=0, attr=False, exclude_tracklets=None):
+    def _process_data(self, home_dir, relabel=True, min_seq_len=0, attr=False, exclude_tracklets=None, pid2label=None):
         pid_list = []
         tracklets_path = []
         tracklets_list = []
@@ -528,9 +532,18 @@ class DukeMTMC_Video(object):
                     pid_list.append(int(p))
                     tracklets_path.append(os.path.join(home_dir, p + "/" + t))
                     tracklets_list.append(t)
-        pid_list = set(pid_list)
-        if relabel:
+
+        pid_list = sorted(list(set(pid_list)))
+
+        if isinstance(pid2label, dict) and relabel:
+            start = len(pid2label.keys())
+            for pid in pid_list:
+                if pid not in pid2label.keys():
+                    pid2label[pid] = start
+                    start += 1
+        elif relabel:
             pid2label = {pid: label for label, pid in enumerate(pid_list)}
+
         tracklets = []
         num_imgs_per_tracklet = []
         for tracklet_idx in range(len(tracklets_path)):
@@ -538,7 +551,8 @@ class DukeMTMC_Video(object):
             pid = int(img_names[0].split("_")[0])
             camid = int(img_names[0].split("C")[1].split("_")[0])
             assert 1 <= camid <= 8
-            if relabel: pid = pid2label[pid]
+            if relabel:
+                pid = pid2label[pid]
             camid -= 1  # index starts from 0
             # make sure image names correspond to the same person
             pnames = [img_name[:4] for img_name in img_names]
@@ -558,7 +572,7 @@ class DukeMTMC_Video(object):
                 num_imgs_per_tracklet.append(len(img_paths))
 
         num_tracklets = len(tracklets)
-        return tracklets, num_tracklets, len(pid_list), num_imgs_per_tracklet, tracklets_list
+        return tracklets, num_tracklets, len(pid_list), num_imgs_per_tracklet, tracklets_list, pid2label
 
 """Create dataset"""
 

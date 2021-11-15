@@ -65,7 +65,7 @@ parser.add_argument('--print-freq', type=int, default=80, help="print frequency"
 parser.add_argument('--seed', type=int, default=1, help="manual seed")
 parser.add_argument('--pretrained-model', type=str, default='/home/jiyang/Workspace/Works/video-person-reid/3dconv-person-reid/pretrained_models/resnet-50-kinetics.pth', help='need to be set for resnet3d models')
 parser.add_argument('--evaluate', action='store_true', help="evaluation only")
-parser.add_argument('--eval-step', type=int, default=40,
+parser.add_argument('--eval-step', type=int, default=1,
                     help="run evaluation for every N epochs (set to -1 to test after training)")
 parser.add_argument('--save-dir', type=str, default='log')
 parser.add_argument('--surf', action='store_true')

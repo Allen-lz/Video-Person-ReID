@@ -42,6 +42,7 @@ class VideoDataset(Dataset):
 
     def __getitem__(self, index):
         img_paths, pid, camid = self.dataset[index]
+
         num = len(img_paths)
         if self.sample == 'random':
             """
@@ -69,7 +70,9 @@ class VideoDataset(Dataset):
                 for index in indices:
                     img_name = os.path.basename(img_paths[index])
                     txt_name = img_name.split('.')[0] + '.txt'
-                    img_sift = np.loadtxt(img_paths[index].replace("prid2011", "{}_surf_features".format(self.datasetname)).replace(img_name, txt_name), dtype=np.float32)
+                    img_sift = np.loadtxt(img_paths[index].replace("DukeMTMC-VideoReID", "{}_surf_features".format(self.datasetname)).replace(img_name, txt_name), dtype=np.float32)
+                    if len(img_sift) == 1:
+                        img_sift = np.array([[0] * 64])
                     imgs_sift.append(img_sift)
                     sift2index[str(img_sift).strip()] = index
 
